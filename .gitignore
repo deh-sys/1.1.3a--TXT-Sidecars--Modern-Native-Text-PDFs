@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Stage folders - keep structure but not contents
+01_input_pdfs/*
+!01_input_pdfs/.gitkeep
+02_stage1_docx/*
+!02_stage1_docx/.gitkeep
+03_stage2_raw_md/*
+!03_stage2_raw_md/.gitkeep
+04_stage3_clean_md/*
+!04_stage3_clean_md/.gitkeep
+
+# Python
+__pycache__/
+*.pyc

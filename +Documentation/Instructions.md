@@ -1,0 +1,60 @@
+# PDF-to-Markdown Pipeline
+
+A modular document ingestion pipeline that converts PDF medical records into clean, structured Markdown optimized for RAG systems like NotebookLM.
+
+## Requirements
+
+- macOS with Adobe Acrobat Pro installed
+- Python 3 with PyYAML (`pip install pyyaml`)
+- Pandoc (`brew install pandoc`)
+
+## Setup
+
+**First run only:** Grant Terminal automation permissions for Adobe Acrobat:
+1. Run `python3 pdf_to_word.py` — macOS will prompt for permission
+2. Click **OK** to allow Terminal to control Adobe Acrobat
+3. (Or pre-authorize via **System Settings > Privacy & Security > Automation**)
+
+## Usage
+
+### Step 1: Add PDFs
+Place your source PDF files in the `01_input_pdfs/` folder.
+
+### Step 2: Run the Pipeline
+Execute the three scripts in sequence:
+
+```bash
+python3 pdf_to_word.py    # Converts PDF → Word via Adobe Acrobat
+python3 word_to_md.py     # Converts Word → Markdown via Pandoc
+python3 clean_md.py       # Applies regex cleanup rules
+```
+
+### Step 3: Retrieve Output
+Cleaned Markdown files are in `04_stage3_clean_md/`, ready for NotebookLM.
+
+## Batch Processing (Large Folders)
+
+The pipeline is designed for large batches (1000+ files):
+
+- **Auto-retry:** Failed conversions retry up to 2 times with increasing delays
+- **Periodic restart:** Acrobat restarts every 10 files to prevent degradation
+- **Emergency recovery:** Full Acrobat restart after consecutive failures
+- **Resumable:** Re-running skips already-converted files
+
+## Folder Structure
+
+| Folder | Contents |
+|--------|----------|
+| `01_input_pdfs/` | Source PDFs (input) |
+| `02_stage1_docx/` | Word files from Acrobat |
+| `03_stage2_raw_md/` | Raw Markdown from Pandoc |
+| `04_stage3_clean_md/` | Final cleaned Markdown |
+
+## Customizing Regex Rules
+
+Edit `config_regex.yaml` to add or modify cleanup rules. Each rule has:
+- `name`: Description of the rule
+- `find`: Regex pattern to match
+- `replace`: Replacement string (use `\1`, `\2` for capture groups)
+
+Default rule converts dates (e.g., "12/05/2023") into Markdown headers for timeline generation.
