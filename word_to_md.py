@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
-Script 2: The Converter
+Stage 2: The Converter
 Converts Word (.docx) files to Markdown using Pandoc.
 CRITICAL: Uses --wrap=none to preserve tables for NotebookLM.
+
+Usage:
+    python3 word_to_md.py --input /path/to/pdf/folder
 """
 
+import argparse
 import subprocess
 from pathlib import Path
-
-# Directory configuration
-SCRIPT_DIR = Path(__file__).parent
-INPUT_DIR = SCRIPT_DIR / "02_stage1_docx"
-OUTPUT_DIR = SCRIPT_DIR / "03_stage2_raw_md"
 
 
 def convert_word_to_markdown(docx_path: Path, output_path: Path) -> bool:
@@ -50,22 +49,39 @@ def convert_word_to_markdown(docx_path: Path, output_path: Path) -> bool:
         return False
 
 
-def main():
-    print("=" * 60)
-    print("Word to Markdown Converter (Pandoc)")
-    print("=" * 60)
+def run(input_dir: Path) -> dict:
+    """
+    Run Stage 2: Word to Markdown conversion.
 
-    # Ensure directories exist
-    INPUT_DIR.mkdir(exist_ok=True)
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    Args:
+        input_dir: Path to folder containing PDF files (reads from _stage1_docx subfolder)
+
+    Returns:
+        dict with counts: {'converted': N, 'skipped': N, 'failed': N}
+    """
+    docx_dir = input_dir / "_stage1_docx"
+    output_dir = input_dir / "_stage2_raw_md"
+
+    print("=" * 60)
+    print("STAGE 2: Word → Markdown (Pandoc)")
+    print("=" * 60)
+    print(f"Input:  {docx_dir}")
+    print(f"Output: {output_dir}")
+
+    # Ensure output directory exists
+    output_dir.mkdir(exist_ok=True)
 
     # Get list of Word files
-    docx_files = sorted(INPUT_DIR.glob("*.docx"))
+    if not docx_dir.exists():
+        print(f"\nStage 1 output folder not found: {docx_dir}")
+        print("Run Stage 1 first.")
+        return {'converted': 0, 'skipped': 0, 'failed': 0}
+
+    docx_files = sorted(docx_dir.glob("*.docx"))
 
     if not docx_files:
-        print(f"\nNo Word files found in {INPUT_DIR}")
-        print("Run pdf_to_word.py first to generate Word files.")
-        return
+        print(f"\nNo Word files found in {docx_dir}")
+        return {'converted': 0, 'skipped': 0, 'failed': 0}
 
     print(f"\nFound {len(docx_files)} Word file(s) to process.\n")
 
@@ -74,7 +90,7 @@ def main():
     fail_count = 0
 
     for i, docx_path in enumerate(docx_files, 1):
-        output_path = OUTPUT_DIR / f"{docx_path.stem}.md"
+        output_path = output_dir / f"{docx_path.stem}.md"
 
         print(f"[{i}/{len(docx_files)}] {docx_path.name}")
 
@@ -92,13 +108,29 @@ def main():
             fail_count += 1
 
     # Summary
-    print("\n" + "=" * 60)
-    print("SUMMARY")
-    print("=" * 60)
-    print(f"  Converted: {success_count}")
-    print(f"  Skipped:   {skip_count}")
-    print(f"  Failed:    {fail_count}")
-    print(f"\nOutput folder: {OUTPUT_DIR}")
+    print("\n" + "-" * 40)
+    print(f"Stage 2 Complete: {success_count} converted, {skip_count} skipped, {fail_count} failed")
+
+    return {'converted': success_count, 'skipped': skip_count, 'failed': fail_count}
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Stage 2: Convert Word files to Markdown using Pandoc"
+    )
+    parser.add_argument(
+        "-i", "--input",
+        type=Path,
+        required=True,
+        help="Path to folder containing PDF files"
+    )
+    args = parser.parse_args()
+
+    if not args.input.is_dir():
+        print(f"Error: {args.input} is not a valid directory")
+        return
+
+    run(args.input)
 
 
 if __name__ == "__main__":

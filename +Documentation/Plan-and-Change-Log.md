@@ -63,7 +63,7 @@
 
 ## Current Status
 
-**Version:** 1.2
+**Version:** 1.3
 **Status:** Complete and production-ready for large batches
 
 ### Implemented Features
@@ -79,6 +79,9 @@
 - [x] Periodic Acrobat restart every 10 files
 - [x] Emergency restart after consecutive failures
 - [x] Pipeline router script (`run_pipeline.py`) with stage selection
+- [x] Flexible input folder via `--input` argument
+- [x] Output to `Sidecar Files/` subfolder
+- [x] Green Finder tags on final .md files
 
 ### Known Limitations
 - Requires macOS (AppleScript dependency)
@@ -88,6 +91,15 @@
 ---
 
 ## Change Log
+
+### v1.3 — 2026-01-10
+**Flexible Input + Sidecar Output + Finder Tags**
+
+- All scripts now accept `--input` argument for specifying any folder
+- Intermediate files stored in `_stage1_docx/` and `_stage2_raw_md/` subfolders
+- Final output goes to `Sidecar Files/` subfolder
+- Green Finder tags automatically applied to final .md files
+- Updated documentation with new usage instructions
 
 ### v1.2 — 2026-01-10
 **Pipeline Router**

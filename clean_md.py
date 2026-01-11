@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
-Script 3: The Optimizer
+Stage 3: The Optimizer
 Applies regex transformations to Markdown files for NotebookLM optimization.
 Loads rules from config_regex.yaml.
+Outputs to "Sidecar Files" folder with green Finder tags.
+
+Usage:
+    python3 clean_md.py --input /path/to/pdf/folder
 """
 
+import argparse
+import plistlib
 import re
+import subprocess
 from pathlib import Path
 
 import yaml
 
 # Directory configuration
 SCRIPT_DIR = Path(__file__).parent
-INPUT_DIR = SCRIPT_DIR / "03_stage2_raw_md"
-OUTPUT_DIR = SCRIPT_DIR / "04_stage3_clean_md"
 CONFIG_FILE = SCRIPT_DIR / "config_regex.yaml"
 
 
@@ -66,6 +71,20 @@ def apply_rules(content: str, rules: list) -> str:
     return content
 
 
+def set_finder_tag_green(file_path: Path):
+    """Set a green Finder tag on a file using xattr."""
+    try:
+        # Green tag in macOS Finder format
+        tag_data = plistlib.dumps(["Green\n2"])
+        subprocess.run(
+            ["xattr", "-w", "com.apple.metadata:_kMDItemUserTags", tag_data, str(file_path)],
+            capture_output=True,
+            check=True
+        )
+    except Exception as e:
+        print(f"  Warning: Could not set Finder tag: {e}")
+
+
 def clean_markdown(input_path: Path, output_path: Path, rules: list) -> bool:
     """
     Apply regex rules to a Markdown file.
@@ -80,20 +99,36 @@ def clean_markdown(input_path: Path, output_path: Path, rules: list) -> bool:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(cleaned_content)
 
+        # Apply green Finder tag
+        set_finder_tag_green(output_path)
+
         return True
     except Exception as e:
         print(f"  ERROR: {e}")
         return False
 
 
-def main():
-    print("=" * 60)
-    print("Markdown Cleaner (Regex Optimizer)")
-    print("=" * 60)
+def run(input_dir: Path) -> dict:
+    """
+    Run Stage 3: Markdown cleanup and tagging.
 
-    # Ensure directories exist
-    INPUT_DIR.mkdir(exist_ok=True)
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    Args:
+        input_dir: Path to folder containing PDF files (reads from _stage2_raw_md subfolder)
+
+    Returns:
+        dict with counts: {'converted': N, 'skipped': N, 'failed': N}
+    """
+    raw_md_dir = input_dir / "_stage2_raw_md"
+    output_dir = input_dir / "Sidecar Files"
+
+    print("=" * 60)
+    print("STAGE 3: Clean Markdown + Green Tags")
+    print("=" * 60)
+    print(f"Input:  {raw_md_dir}")
+    print(f"Output: {output_dir}")
+
+    # Ensure output directory exists
+    output_dir.mkdir(exist_ok=True)
 
     # Load regex rules
     rules = load_regex_rules()
@@ -101,13 +136,18 @@ def main():
     for rule in rules:
         print(f"  - {rule.get('name', 'Unnamed')}: {rule.get('description', '')}")
 
+    # Check if input directory exists
+    if not raw_md_dir.exists():
+        print(f"\nStage 2 output folder not found: {raw_md_dir}")
+        print("Run Stage 2 first.")
+        return {'converted': 0, 'skipped': 0, 'failed': 0}
+
     # Get list of Markdown files
-    md_files = sorted(INPUT_DIR.glob("*.md"))
+    md_files = sorted(raw_md_dir.glob("*.md"))
 
     if not md_files:
-        print(f"\nNo Markdown files found in {INPUT_DIR}")
-        print("Run word_to_md.py first to generate Markdown files.")
-        return
+        print(f"\nNo Markdown files found in {raw_md_dir}")
+        return {'converted': 0, 'skipped': 0, 'failed': 0}
 
     print(f"\nFound {len(md_files)} Markdown file(s) to process.\n")
 
@@ -116,7 +156,7 @@ def main():
     fail_count = 0
 
     for i, md_path in enumerate(md_files, 1):
-        output_path = OUTPUT_DIR / md_path.name
+        output_path = output_dir / md_path.name
 
         print(f"[{i}/{len(md_files)}] {md_path.name}")
 
@@ -126,7 +166,7 @@ def main():
             skip_count += 1
             continue
 
-        print(f"  Applying regex rules...")
+        print(f"  Applying regex rules + green tag...")
         if clean_markdown(md_path, output_path, rules):
             print(f"  Success: {output_path.name}")
             success_count += 1
@@ -134,13 +174,30 @@ def main():
             fail_count += 1
 
     # Summary
-    print("\n" + "=" * 60)
-    print("SUMMARY")
-    print("=" * 60)
-    print(f"  Cleaned:  {success_count}")
-    print(f"  Skipped:  {skip_count}")
-    print(f"  Failed:   {fail_count}")
-    print(f"\nOutput folder: {OUTPUT_DIR}")
+    print("\n" + "-" * 40)
+    print(f"Stage 3 Complete: {success_count} cleaned, {skip_count} skipped, {fail_count} failed")
+    print(f"Output: {output_dir}")
+
+    return {'converted': success_count, 'skipped': skip_count, 'failed': fail_count}
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Stage 3: Clean Markdown and apply green Finder tags"
+    )
+    parser.add_argument(
+        "-i", "--input",
+        type=Path,
+        required=True,
+        help="Path to folder containing PDF files"
+    )
+    args = parser.parse_args()
+
+    if not args.input.is_dir():
+        print(f"Error: {args.input} is not a valid directory")
+        return
+
+    run(args.input)
 
 
 if __name__ == "__main__":

@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-Script 1: The Acrobat Bridge
+Stage 1: The Acrobat Bridge
 Converts PDFs to Word (.docx) using Adobe Acrobat's AppleScript interface.
 
 Uses external acrobat_export.scpt which invokes Acrobat's JavaScript saveAs()
 for synchronous (blocking) file writes.
+
+Usage:
+    python3 pdf_to_word.py --input /path/to/pdf/folder
 """
 
+import argparse
 import subprocess
 import time
 from pathlib import Path
 
 # Directory configuration
 SCRIPT_DIR = Path(__file__).parent
-INPUT_DIR = SCRIPT_DIR / "01_input_pdfs"
-OUTPUT_DIR = SCRIPT_DIR / "02_stage1_docx"
 APPLESCRIPT_FILE = SCRIPT_DIR / "acrobat_export.scpt"
 
 # Delay between files to prevent Acrobat from freezing
@@ -27,14 +29,12 @@ RESTART_EVERY = 10
 def restart_acrobat():
     """Quit and restart Adobe Acrobat to reset its state."""
     print("  >> Restarting Adobe Acrobat...")
-    # Quit Acrobat
     subprocess.run(
         ["osascript", "-e", 'tell application "Adobe Acrobat" to quit'],
         capture_output=True,
         timeout=30
     )
     time.sleep(5)
-    # Activate will relaunch it on next conversion
     print("  >> Acrobat restarted.")
 
 
@@ -49,7 +49,7 @@ def convert_pdf_to_word(pdf_path: Path, output_path: Path) -> bool:
             ["osascript", str(APPLESCRIPT_FILE), str(pdf_path), str(output_path)],
             capture_output=True,
             text=True,
-            timeout=180  # 3 minutes for large files
+            timeout=180
         )
         if result.returncode != 0:
             print(f"  ERROR: {result.stderr.strip()}")
@@ -63,22 +63,33 @@ def convert_pdf_to_word(pdf_path: Path, output_path: Path) -> bool:
         return False
 
 
-def main():
-    print("=" * 60)
-    print("PDF to Word Converter (Adobe Acrobat)")
-    print("=" * 60)
+def run(input_dir: Path) -> dict:
+    """
+    Run Stage 1: PDF to Word conversion.
 
-    # Ensure directories exist
-    INPUT_DIR.mkdir(exist_ok=True)
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    Args:
+        input_dir: Path to folder containing PDF files
+
+    Returns:
+        dict with counts: {'converted': N, 'skipped': N, 'failed': N}
+    """
+    output_dir = input_dir / "_stage1_docx"
+
+    print("=" * 60)
+    print("STAGE 1: PDF → Word (Adobe Acrobat)")
+    print("=" * 60)
+    print(f"Input:  {input_dir}")
+    print(f"Output: {output_dir}")
+
+    # Ensure output directory exists
+    output_dir.mkdir(exist_ok=True)
 
     # Get list of PDFs
-    pdf_files = sorted(INPUT_DIR.glob("*.pdf"))
+    pdf_files = sorted(input_dir.glob("*.pdf"))
 
     if not pdf_files:
-        print(f"\nNo PDF files found in {INPUT_DIR}")
-        print("Place PDF files in the 01_input_pdfs folder and run again.")
-        return
+        print(f"\nNo PDF files found in {input_dir}")
+        return {'converted': 0, 'skipped': 0, 'failed': 0}
 
     print(f"\nFound {len(pdf_files)} PDF file(s) to process.\n")
 
@@ -88,7 +99,7 @@ def main():
     files_since_restart = 0
 
     for i, pdf_path in enumerate(pdf_files, 1):
-        output_path = OUTPUT_DIR / f"{pdf_path.stem}.docx"
+        output_path = output_dir / f"{pdf_path.stem}.docx"
 
         print(f"[{i}/{len(pdf_files)}] {pdf_path.name}")
 
@@ -142,13 +153,29 @@ def main():
             time.sleep(DELAY_SECONDS)
 
     # Summary
-    print("\n" + "=" * 60)
-    print("SUMMARY")
-    print("=" * 60)
-    print(f"  Converted: {success_count}")
-    print(f"  Skipped:   {skip_count}")
-    print(f"  Failed:    {fail_count}")
-    print(f"\nOutput folder: {OUTPUT_DIR}")
+    print("\n" + "-" * 40)
+    print(f"Stage 1 Complete: {success_count} converted, {skip_count} skipped, {fail_count} failed")
+
+    return {'converted': success_count, 'skipped': skip_count, 'failed': fail_count}
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Stage 1: Convert PDFs to Word using Adobe Acrobat"
+    )
+    parser.add_argument(
+        "-i", "--input",
+        type=Path,
+        required=True,
+        help="Path to folder containing PDF files"
+    )
+    args = parser.parse_args()
+
+    if not args.input.is_dir():
+        print(f"Error: {args.input} is not a valid directory")
+        return
+
+    run(args.input)
 
 
 if __name__ == "__main__":
