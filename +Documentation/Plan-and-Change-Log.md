@@ -63,7 +63,7 @@
 
 ## Current Status
 
-**Version:** 1.4
+**Version:** 1.5
 **Status:** Complete and production-ready for large batches
 
 ### Implemented Features
@@ -82,7 +82,7 @@
 - [x] Flexible input folder via `--input` argument
 - [x] Output to `Sidecar Files/` subfolder
 - [x] Green Finder tags on final .md files
-- [x] Medical heading detection (IMRAD, clinical, case reports, back matter, ALL CAPS)
+- [x] Medical heading detection (IMRAD, clinical, patient education, Q&A, case reports, back matter, ALL CAPS)
 
 ### Known Limitations
 - Requires macOS (AppleScript dependency)
@@ -92,6 +92,16 @@
 ---
 
 ## Change Log
+
+### v1.5 — 2026-01-11
+**Expanded Medical Heading Detection**
+
+- Added patient education patterns (MedlinePlus/Mayo Clinic style): Start Here, Diagnosis and Tests, Related Issues, Genetics, Clinical Trials, Find an Expert, Patient Handouts, Medical Encyclopedia
+- Added Q&A patterns: "What are X?", "What is X?", "How does X?", "Types of X", "Alternative Names"
+- Added clinical terms: Pathogenesis, Complications
+- Added structure terms: Summary, Future Directions
+- Added back matter terms: Abbreviations, Keywords
+- Improved ALL CAPS heuristic: filters out sentences (>12 words or ends with period)
 
 ### v1.4 — 2026-01-11
 **Medical Heading Detection**

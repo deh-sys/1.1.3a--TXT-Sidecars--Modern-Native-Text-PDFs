@@ -75,45 +75,64 @@ def mark_medical_headings(content: str) -> str:
     """
     Detect and mark medical document headings as Markdown headers.
     Uses line-by-line processing with priority ordering.
+
+    Handles: Academic papers (IMRAD), clinical guidelines, patient education,
+    Q&A formats, and case reports.
     """
     lines = content.split('\n')
     new_lines = []
 
-    # Compile patterns with re.IGNORECASE
     # 1. IMRAD structure (standard journal format)
     p_structure = re.compile(
         r'^\s*(?:\d+\.|[IVX]+\.)?\s*'
-        r'(Abstract|Introduction|Background|Objectives?|Aims?|'
+        r'(Abstract|Summary|Introduction|Background|Objectives?|Aims?|'
         r'Methods?|Materials\s+and\s+Methods|Patients\s+and\s+Methods|'
         r'Study\s+Design|Results?|Findings?|Discussion|Comments?|'
-        r'Conclusion[s]?)\s*$',
+        r'Conclusion.*|Future\s+Directions)\s*$',
         re.IGNORECASE
     )
 
-    # 2. Clinical/Guideline headings
+    # 2. Clinical & Causation headings (crucial for malpractice analysis)
     p_clinical = re.compile(
         r'^\s*(?:\d+\.|[IVX]+\.)?\s*'
-        r'(Epidemiology|Etiology|Pathophysiology|Clinical\s+Presentation|'
-        r'Diagnosis|Evaluation|Investigations|Management|Treatment|'
-        r'Therapy|Prognosis|Prevention|Recommendations?|Key\s+Points?)\s*$',
+        r'(Epidemiology|Etiology|Pathophysiology|Pathogenesis|'
+        r'Clinical\s+Presentation|Diagnosis|Evaluation|Investigations|'
+        r'Management|Treatment|Therapy|Prognosis|Complications|'
+        r'Prevention|Recommendations?|Key\s+Points?)\s*$',
         re.IGNORECASE
     )
 
-    # 3. Case reports
+    # 3. Patient Education / MedlinePlus style
+    p_patient_ed = re.compile(
+        r'^\s*(Start\s+Here|Diagnosis\s+and\s+Tests?|Related\s+Issues|'
+        r'Genetics|Clinical\s+Trials?|Journal\s+Articles?|'
+        r'Find\s+an\s+Expert|Patient\s+Handouts?|Medical\s+Encyclopedia)\s*$',
+        re.IGNORECASE
+    )
+
+    # 4. Q&A / Definition headers (e.g., "What are Fats?", "Types of fat")
+    p_qa = re.compile(
+        r'^\s*(What\s+are\s+.+\??|What\s+is\s+.+\??|How\s+does\s+.+\??|'
+        r'Types\s+of\s+.+|Alternative\s+Names?)\s*$',
+        re.IGNORECASE
+    )
+
+    # 5. Case reports
     p_case = re.compile(
         r'^\s*(Case\s+Report[s]?|Case\s+Presentation|Case\s+\d+(?:-\d+)?)\s*$',
         re.IGNORECASE
     )
 
-    # 4. Back matter (references, acknowledgments, etc.)
+    # 6. Back matter (meta-data to separate from clinical content)
     p_meta = re.compile(
         r'^\s*(References|Bibliography|Literature\s+Cited|'
+        r'Abbreviations?|Key\s*words?|'
         r'Acknowledgments?|Disclosures?|Conflicts?\s+of\s+Interest|'
         r'Funding|Financial\s+Support|Author\s+Contributions)\s*$',
         re.IGNORECASE
     )
 
-    # 5. ALL CAPS heuristic (with noise filtering)
+    # 7. ALL CAPS heuristic (with noise filtering)
     p_caps = re.compile(
         r'^(?!.*\b(Copyright|DOI|ISSN|Vol\.|Page)\b)[A-Z][A-Z0-9\s\-\(\):]{3,80}$'
     )
@@ -129,17 +148,22 @@ def mark_medical_headings(content: str) -> str:
             new_lines.append(line)
             continue
 
-        # Priority 1: Named sections → ## heading
-        if p_structure.match(clean) or p_clinical.match(clean) or p_case.match(clean):
+        # Priority 1: High-confidence named sections → ## heading
+        if (p_structure.match(clean) or p_clinical.match(clean) or
+            p_patient_ed.match(clean) or p_case.match(clean) or p_qa.match(clean)):
             new_lines.append(f"\n## {clean}\n")
 
         # Priority 2: Back matter → --- separator + ### heading
         elif p_meta.match(clean):
             new_lines.append(f"\n---\n### {clean}\n")
 
-        # Priority 3: ALL CAPS fallback (only if not all digits)
+        # Priority 3: ALL CAPS fallback (with sentence filtering)
         elif p_caps.match(clean) and not clean.replace('.', '').replace(' ', '').isdigit():
-            new_lines.append(f"\n## {clean}\n")
+            # Sanity check: headers are typically short and don't end with period
+            if len(clean.split()) < 12 and not clean.endswith('.'):
+                new_lines.append(f"\n## {clean}\n")
+            else:
+                new_lines.append(line)
 
         else:
             new_lines.append(line)
