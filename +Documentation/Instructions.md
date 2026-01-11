@@ -21,12 +21,22 @@ A modular document ingestion pipeline that converts PDF medical records into cle
 Place your source PDF files in the `01_input_pdfs/` folder.
 
 ### Step 2: Run the Pipeline
-Execute the three scripts in sequence:
 
+**Option A: Run all stages at once**
 ```bash
-python3 pdf_to_word.py    # Converts PDF → Word via Adobe Acrobat
-python3 word_to_md.py     # Converts Word → Markdown via Pandoc
-python3 clean_md.py       # Applies regex cleanup rules
+python3 run_pipeline.py
+```
+
+**Option B: Run stages individually**
+```bash
+python3 pdf_to_word.py    # Stage 1: PDF → Word via Adobe Acrobat
+python3 word_to_md.py     # Stage 2: Word → Markdown via Pandoc
+python3 clean_md.py       # Stage 3: Applies regex cleanup rules
+```
+
+**Option C: Run specific stages**
+```bash
+python3 run_pipeline.py --stage 2 --stage 3  # Skip Stage 1
 ```
 
 ### Step 3: Retrieve Output

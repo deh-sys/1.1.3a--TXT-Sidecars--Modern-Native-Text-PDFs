@@ -39,6 +39,7 @@
 
 | File | Technology | Purpose |
 |------|------------|---------|
+| `run_pipeline.py` | Python | Router script to run all stages in sequence |
 | `pdf_to_word.py` | Python + AppleScript + Adobe Acrobat | Converts PDFs to Word using Acrobat's high-quality export |
 | `word_to_md.py` | Python + Pandoc | Converts Word to Markdown with `--wrap=none` to preserve tables |
 | `clean_md.py` | Python + PyYAML + regex | Applies configurable regex transformations |
@@ -62,7 +63,7 @@
 
 ## Current Status
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Complete and production-ready for large batches
 
 ### Implemented Features
@@ -77,6 +78,7 @@
 - [x] Auto-retry with escalating delays (10s, 15s)
 - [x] Periodic Acrobat restart every 10 files
 - [x] Emergency restart after consecutive failures
+- [x] Pipeline router script (`run_pipeline.py`) with stage selection
 
 ### Known Limitations
 - Requires macOS (AppleScript dependency)
@@ -86,6 +88,13 @@
 ---
 
 ## Change Log
+
+### v1.2 — 2026-01-10
+**Pipeline Router**
+
+- Added `run_pipeline.py` to run all stages with a single command
+- Supports `--stage` flag to run specific stages only
+- Updated documentation with new usage options
 
 ### v1.1 — 2026-01-10
 **Robustness Update for Large Batches**
