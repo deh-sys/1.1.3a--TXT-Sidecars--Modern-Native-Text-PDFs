@@ -5,10 +5,10 @@ on run argv
     -- Escape backslashes and single quotes for JavaScript string
     set jsCode to "var f = '" & my jsEscapePath(outputPath) & "';" & return & "this.saveAs(f, 'com.adobe.acrobat.docx');"
 
-    tell application "Adobe Acrobat"
-        activate
-        open POSIX file pdfPath
+    -- Open PDF in background (no focus steal)
+    do shell script "open -g -a 'Adobe Acrobat' " & quoted form of pdfPath
 
+    tell application "Adobe Acrobat"
         -- Wait for document to load
         repeat until (count of documents) > 0
             delay 0.2

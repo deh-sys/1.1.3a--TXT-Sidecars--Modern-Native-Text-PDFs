@@ -4,12 +4,16 @@ Stage 2: The Converter
 Converts Word (.docx) files to Markdown using Pandoc.
 CRITICAL: Uses --wrap=none to preserve tables for NotebookLM.
 
+Supports parallel processing for large batches.
+
 Usage:
     python3 word_to_md.py --input /path/to/pdf/folder
+    python3 word_to_md.py --input /path/to/folder --workers 8
 """
 
 import argparse
 import subprocess
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 
 
@@ -35,26 +39,41 @@ def convert_word_to_markdown(docx_path: Path, output_path: Path) -> bool:
             timeout=60
         )
         if result.returncode != 0:
-            print(f"  ERROR: {result.stderr.strip()}")
             return False
         return True
     except subprocess.TimeoutExpired:
-        print("  ERROR: Conversion timed out")
         return False
     except FileNotFoundError:
-        print("  ERROR: Pandoc not found. Install with: brew install pandoc")
         return False
-    except Exception as e:
-        print(f"  ERROR: {e}")
+    except Exception:
         return False
 
 
-def run(input_dir: Path) -> dict:
+def _convert_single_file(args: tuple) -> tuple:
+    """
+    Worker function for parallel processing.
+    Args: (docx_path, output_path) tuple
+    Returns: (status, filename) tuple where status is 'success', 'skipped', or 'failed'
+    """
+    docx_path, output_path = args
+
+    # Skip if output already exists
+    if output_path.exists():
+        return ('skipped', docx_path.name)
+
+    # Convert
+    if convert_word_to_markdown(docx_path, output_path):
+        return ('success', docx_path.name)
+    return ('failed', docx_path.name)
+
+
+def run(input_dir: Path, workers: int = None) -> dict:
     """
     Run Stage 2: Word to Markdown conversion.
 
     Args:
         input_dir: Path to folder containing PDF files (reads from _stage1_docx subfolder)
+        workers: Number of parallel workers (default: CPU cores - 1)
 
     Returns:
         dict with counts: {'converted': N, 'skipped': N, 'failed': N}
@@ -83,29 +102,53 @@ def run(input_dir: Path) -> dict:
         print(f"\nNo Word files found in {docx_dir}")
         return {'converted': 0, 'skipped': 0, 'failed': 0}
 
-    print(f"\nFound {len(docx_files)} Word file(s) to process.\n")
+    # Determine worker count
+    if workers is None:
+        workers = max(1, cpu_count() - 1)
 
-    success_count = 0
-    skip_count = 0
-    fail_count = 0
+    print(f"\nFound {len(docx_files)} Word file(s) to process.")
+    print(f"Using {workers} parallel worker(s).\n")
 
-    for i, docx_path in enumerate(docx_files, 1):
-        output_path = output_dir / f"{docx_path.stem}.md"
+    # Build work items
+    work_items = [
+        (docx_path, output_dir / f"{docx_path.stem}.md")
+        for docx_path in docx_files
+    ]
 
-        print(f"[{i}/{len(docx_files)}] {docx_path.name}")
+    # Process files
+    if workers == 1:
+        # Sequential processing (preserves detailed output)
+        results = []
+        for i, (docx_path, output_path) in enumerate(work_items, 1):
+            print(f"[{i}/{len(work_items)}] {docx_path.name}")
+            if output_path.exists():
+                print(f"  Skipping... (output already exists)")
+                results.append(('skipped', docx_path.name))
+            else:
+                print(f"  Converting to Markdown...")
+                if convert_word_to_markdown(docx_path, output_path):
+                    print(f"  Success: {output_path.name}")
+                    results.append(('success', docx_path.name))
+                else:
+                    print(f"  Failed: {docx_path.name}")
+                    results.append(('failed', docx_path.name))
+    else:
+        # Parallel processing
+        print("Processing files in parallel...")
+        with Pool(workers) as pool:
+            results = pool.map(_convert_single_file, work_items)
 
-        # Check if output already exists
-        if output_path.exists():
-            print(f"  Skipping... (output already exists)")
-            skip_count += 1
-            continue
+        # Print summary of results
+        for status, filename in results:
+            if status == 'success':
+                print(f"  ✓ {filename}")
+            elif status == 'failed':
+                print(f"  ✗ {filename}")
 
-        print(f"  Converting to Markdown...")
-        if convert_word_to_markdown(docx_path, output_path):
-            print(f"  Success: {output_path.name}")
-            success_count += 1
-        else:
-            fail_count += 1
+    # Count results
+    success_count = sum(1 for r in results if r[0] == 'success')
+    skip_count = sum(1 for r in results if r[0] == 'skipped')
+    fail_count = sum(1 for r in results if r[0] == 'failed')
 
     # Summary
     print("\n" + "-" * 40)
@@ -124,13 +167,19 @@ def main():
         required=True,
         help="Path to folder containing PDF files"
     )
+    parser.add_argument(
+        "-w", "--workers",
+        type=int,
+        default=None,
+        help=f"Number of parallel workers (default: {max(1, cpu_count() - 1)})"
+    )
     args = parser.parse_args()
 
     if not args.input.is_dir():
         print(f"Error: {args.input} is not a valid directory")
         return
 
-    run(args.input)
+    run(args.input, workers=args.workers)
 
 
 if __name__ == "__main__":

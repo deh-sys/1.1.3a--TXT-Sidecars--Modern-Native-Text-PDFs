@@ -59,12 +59,12 @@
 
 6. **JavaScript saveAs() for synchronous saving:** Acrobat's native AppleScript `save` command returns before the file is fully written. Using `do script` with JavaScript ensures the save completes before proceeding.
 
-7. **Periodic Acrobat restart:** Acrobat's AppleScript interface degrades over time. Restarting every N files prevents accumulating instability.
+7. **Background operation:** Uses `open -g` flag to prevent Acrobat from stealing focus during batch processing.
 
 ## Current Status
 
-**Version:** 1.5
-**Status:** Complete and production-ready for large batches
+**Version:** 1.8.2
+**Status:** Complete and production-ready for large batches (2000+ files)
 
 ### Implemented Features
 - [x] PDF to Word conversion via Adobe Acrobat
@@ -76,13 +76,19 @@
 - [x] Default date-to-header regex rule for timeline generation
 - [x] Synchronous file saving via JavaScript `saveAs()`
 - [x] Auto-retry with escalating delays (10s, 15s)
-- [x] Periodic Acrobat restart every 10 files
-- [x] Emergency restart after consecutive failures
+- [x] Emergency force-kill after all retries fail (rare)
 - [x] Pipeline router script (`run_pipeline.py`) with stage selection
 - [x] Flexible input folder via `--input` argument
 - [x] Output to `Sidecar Files/` subfolder
 - [x] Green Finder tags on final .md files
 - [x] Medical heading detection (IMRAD, clinical, patient education, Q&A, case reports, back matter, ALL CAPS)
+- [x] Parallel processing for Stages 2 and 3 (configurable via `--workers`)
+- [x] Sleep prevention via macOS `caffeinate` (auto-enabled, disable with `--no-caffeinate`)
+- [x] ETA display during Stage 1 processing
+- [x] Force-kill Acrobat to handle modal dialog states (JS debugger, etc.)
+- [x] Circuit breaker: auto-abort after 5 consecutive failures
+- [x] Failed files manifest (`_failed_pdfs.txt`) for review/retry
+- [x] Background operation: Acrobat no longer steals focus during batch processing (uses `open -g`)
 
 ### Known Limitations
 - Requires macOS (AppleScript dependency)
@@ -92,6 +98,49 @@
 ---
 
 ## Change Log
+
+### v1.8.2 — 2026-01-11
+**Fix System Events Error**
+
+- Removed System Events hide command (was causing `-10006` errors)
+- The `open -g` flag alone is sufficient for background operation
+- Fixes spurious force-kills triggered by AppleScript errors
+
+### v1.8.1 — 2026-01-11
+**Remove Periodic Restart**
+
+- Removed periodic Acrobat restart (was every 10 files, caused focus stealing on relaunch)
+- Force-kill now only used for failure recovery (rare)
+- Retry logic and circuit breaker provide sufficient protection without proactive restarts
+
+### v1.8 — 2026-01-11
+**Background Operation (No Focus Stealing)**
+
+- Acrobat no longer steals focus when opening each PDF
+- Replaced AppleScript `open` with `open -g` (background flag)
+- Removed `activate` command from AppleScript
+- Added System Events hide as fallback to prevent any focus flicker
+- Computer now usable for other tasks during multi-hour batch runs
+
+### v1.7 — 2026-01-11
+**Acrobat Hang Recovery**
+
+- **Force-kill Acrobat** using `pkill -9` instead of polite AppleScript quit (handles modal states like JS debugger)
+- **Circuit breaker**: Auto-abort after 5 consecutive failures to prevent infinite loops
+- **Failed files manifest**: Writes `_failed_pdfs.txt` to output folder for later review/retry
+- Fixed issue where JavaScript Debugger popup would block all AppleScript commands indefinitely
+- Recommendation: Disable Acrobat's JS debugger in Preferences → JavaScript
+
+### v1.6 — 2026-01-11
+**Large Batch Optimization**
+
+- Added parallel processing for Stage 2 (Word→Markdown) and Stage 3 (Clean Markdown)
+- New `--workers` flag to set number of parallel workers (default: CPU cores - 1)
+- Added sleep prevention via macOS `caffeinate` (auto-enabled by default)
+- New `--no-caffeinate` flag to disable sleep prevention
+- Added ETA display during Stage 1 processing
+- Stages 2 and 3 now show parallel processing status and worker count
+- Sequential mode (workers=1) preserves detailed per-file output
 
 ### v1.5 — 2026-01-11
 **Expanded Medical Heading Detection**

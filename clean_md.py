@@ -5,14 +5,18 @@ Applies regex transformations to Markdown files for NotebookLM optimization.
 Loads rules from config_regex.yaml.
 Outputs to "Sidecar Files" folder with green Finder tags.
 
+Supports parallel processing for large batches.
+
 Usage:
     python3 clean_md.py --input /path/to/pdf/folder
+    python3 clean_md.py --input /path/to/folder --workers 8
 """
 
 import argparse
 import plistlib
 import re
 import subprocess
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 
 import yaml
@@ -20,6 +24,9 @@ import yaml
 # Directory configuration
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "config_regex.yaml"
+
+# Global rules variable for multiprocessing workers
+_GLOBAL_RULES = []
 
 
 def load_regex_rules() -> list:
@@ -55,18 +62,16 @@ def create_default_config():
 def apply_rules(content: str, rules: list) -> str:
     """Apply all regex rules to the content."""
     for rule in rules:
-        name = rule.get("name", "Unnamed rule")
         find_pattern = rule.get("find", "")
         replace_pattern = rule.get("replace", "")
 
         if not find_pattern:
-            print(f"  Skipping rule '{name}': no 'find' pattern")
             continue
 
         try:
             content = re.sub(find_pattern, replace_pattern, content)
-        except re.error as e:
-            print(f"  ERROR in rule '{name}': {e}")
+        except re.error:
+            pass
 
     return content
 
@@ -181,8 +186,8 @@ def set_finder_tag_green(file_path: Path):
             capture_output=True,
             check=True
         )
-    except Exception as e:
-        print(f"  Warning: Could not set Finder tag: {e}")
+    except Exception:
+        pass  # Silent fail for tags (non-critical)
 
 
 def clean_markdown(input_path: Path, output_path: Path, rules: list) -> bool:
@@ -207,17 +212,41 @@ def clean_markdown(input_path: Path, output_path: Path, rules: list) -> bool:
         set_finder_tag_green(output_path)
 
         return True
-    except Exception as e:
-        print(f"  ERROR: {e}")
+    except Exception:
         return False
 
 
-def run(input_dir: Path) -> dict:
+def _clean_single_file(args: tuple) -> tuple:
+    """
+    Worker function for parallel processing.
+    Args: (input_path, output_path) tuple
+    Returns: (status, filename) tuple where status is 'success', 'skipped', or 'failed'
+    """
+    input_path, output_path = args
+
+    # Skip if output already exists
+    if output_path.exists():
+        return ('skipped', input_path.name)
+
+    # Clean
+    if clean_markdown(input_path, output_path, _GLOBAL_RULES):
+        return ('success', input_path.name)
+    return ('failed', input_path.name)
+
+
+def _init_worker(rules: list):
+    """Initialize worker with shared rules."""
+    global _GLOBAL_RULES
+    _GLOBAL_RULES = rules
+
+
+def run(input_dir: Path, workers: int = None) -> dict:
     """
     Run Stage 3: Markdown cleanup and tagging.
 
     Args:
         input_dir: Path to folder containing PDF files (reads from _stage2_raw_md subfolder)
+        workers: Number of parallel workers (default: CPU cores - 1)
 
     Returns:
         dict with counts: {'converted': N, 'skipped': N, 'failed': N}
@@ -253,29 +282,53 @@ def run(input_dir: Path) -> dict:
         print(f"\nNo Markdown files found in {raw_md_dir}")
         return {'converted': 0, 'skipped': 0, 'failed': 0}
 
-    print(f"\nFound {len(md_files)} Markdown file(s) to process.\n")
+    # Determine worker count
+    if workers is None:
+        workers = max(1, cpu_count() - 1)
 
-    success_count = 0
-    skip_count = 0
-    fail_count = 0
+    print(f"\nFound {len(md_files)} Markdown file(s) to process.")
+    print(f"Using {workers} parallel worker(s).\n")
 
-    for i, md_path in enumerate(md_files, 1):
-        output_path = output_dir / md_path.name
+    # Build work items
+    work_items = [
+        (md_path, output_dir / md_path.name)
+        for md_path in md_files
+    ]
 
-        print(f"[{i}/{len(md_files)}] {md_path.name}")
+    # Process files
+    if workers == 1:
+        # Sequential processing (preserves detailed output)
+        results = []
+        for i, (md_path, output_path) in enumerate(work_items, 1):
+            print(f"[{i}/{len(work_items)}] {md_path.name}")
+            if output_path.exists():
+                print(f"  Skipping... (output already exists)")
+                results.append(('skipped', md_path.name))
+            else:
+                print(f"  Applying regex rules + green tag...")
+                if clean_markdown(md_path, output_path, rules):
+                    print(f"  Success: {output_path.name}")
+                    results.append(('success', md_path.name))
+                else:
+                    print(f"  Failed: {md_path.name}")
+                    results.append(('failed', md_path.name))
+    else:
+        # Parallel processing
+        print("Processing files in parallel...")
+        with Pool(workers, initializer=_init_worker, initargs=(rules,)) as pool:
+            results = pool.map(_clean_single_file, work_items)
 
-        # Check if output already exists
-        if output_path.exists():
-            print(f"  Skipping... (output already exists)")
-            skip_count += 1
-            continue
+        # Print summary of results
+        for status, filename in results:
+            if status == 'success':
+                print(f"  ✓ {filename}")
+            elif status == 'failed':
+                print(f"  ✗ {filename}")
 
-        print(f"  Applying regex rules + green tag...")
-        if clean_markdown(md_path, output_path, rules):
-            print(f"  Success: {output_path.name}")
-            success_count += 1
-        else:
-            fail_count += 1
+    # Count results
+    success_count = sum(1 for r in results if r[0] == 'success')
+    skip_count = sum(1 for r in results if r[0] == 'skipped')
+    fail_count = sum(1 for r in results if r[0] == 'failed')
 
     # Summary
     print("\n" + "-" * 40)
@@ -295,13 +348,19 @@ def main():
         required=True,
         help="Path to folder containing PDF files"
     )
+    parser.add_argument(
+        "-w", "--workers",
+        type=int,
+        default=None,
+        help=f"Number of parallel workers (default: {max(1, cpu_count() - 1)})"
+    )
     args = parser.parse_args()
 
     if not args.input.is_dir():
         print(f"Error: {args.input} is not a valid directory")
         return
 
-    run(args.input)
+    run(args.input, workers=args.workers)
 
 
 if __name__ == "__main__":

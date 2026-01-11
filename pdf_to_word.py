@@ -13,6 +13,7 @@ Usage:
 import argparse
 import subprocess
 import time
+from datetime import timedelta
 from pathlib import Path
 
 # Directory configuration
@@ -22,20 +23,16 @@ APPLESCRIPT_FILE = SCRIPT_DIR / "acrobat_export.scpt"
 # Delay between files to prevent Acrobat from freezing
 DELAY_SECONDS = 5
 
-# Restart Acrobat every N files to prevent degradation
-RESTART_EVERY = 10
+# Abort after this many consecutive failures (indicates systemic issue)
+MAX_CONSECUTIVE_FAILURES = 5
 
 
-def restart_acrobat():
-    """Quit and restart Adobe Acrobat to reset its state."""
-    print("  >> Restarting Adobe Acrobat...")
-    subprocess.run(
-        ["osascript", "-e", 'tell application "Adobe Acrobat" to quit'],
-        capture_output=True,
-        timeout=30
-    )
+def force_kill_acrobat():
+    """Force-kill Adobe Acrobat (handles modal dialog states like JS debugger)."""
+    print("  >> Force-killing Adobe Acrobat...")
+    subprocess.run(["pkill", "-9", "-f", "Adobe Acrobat"], capture_output=True)
     time.sleep(5)
-    print("  >> Acrobat restarted.")
+    print("  >> Acrobat terminated.")
 
 
 def convert_pdf_to_word(pdf_path: Path, output_path: Path) -> bool:
@@ -96,12 +93,24 @@ def run(input_dir: Path) -> dict:
     success_count = 0
     skip_count = 0
     fail_count = 0
-    files_since_restart = 0
+    start_time = time.time()
+    processed_count = 0  # Track actually processed files for ETA
+    consecutive_failures = 0  # Circuit breaker for systemic issues
+    failed_files = []  # Log of failed file names
 
     for i, pdf_path in enumerate(pdf_files, 1):
         output_path = output_dir / f"{pdf_path.stem}.docx"
 
-        print(f"[{i}/{len(pdf_files)}] {pdf_path.name}")
+        # Calculate ETA based on processed files
+        eta_str = ""
+        if processed_count > 0:
+            elapsed = time.time() - start_time
+            avg_per_file = elapsed / processed_count
+            remaining_files = len(pdf_files) - i + 1
+            remaining_time = remaining_files * avg_per_file
+            eta_str = f" | ETA: {str(timedelta(seconds=int(remaining_time)))}"
+
+        print(f"[{i}/{len(pdf_files)}] {pdf_path.name}{eta_str}")
 
         # Check if output already exists
         if output_path.exists():
@@ -109,43 +118,53 @@ def run(input_dir: Path) -> dict:
             skip_count += 1
             continue
 
-        # Periodic restart to prevent Acrobat degradation
-        if files_since_restart >= RESTART_EVERY:
-            restart_acrobat()
-            files_since_restart = 0
-
         print(f"  Converting to Word...")
+        conversion_success = False
+
         if convert_pdf_to_word(pdf_path, output_path):
             print(f"  Success: {output_path.name}")
-            success_count += 1
-            files_since_restart += 1
+            conversion_success = True
         else:
             # Retry 1: wait 10 seconds
             print(f"  Retry 1 in 10 seconds...")
             time.sleep(10)
             if convert_pdf_to_word(pdf_path, output_path):
                 print(f"  Success on retry 1: {output_path.name}")
-                success_count += 1
-                files_since_restart += 1
+                conversion_success = True
             else:
                 # Retry 2: wait 15 seconds
                 print(f"  Retry 2 in 15 seconds...")
                 time.sleep(15)
                 if convert_pdf_to_word(pdf_path, output_path):
                     print(f"  Success on retry 2: {output_path.name}")
-                    success_count += 1
-                    files_since_restart += 1
+                    conversion_success = True
                 else:
-                    # All retries failed - restart Acrobat and try once more
-                    print(f"  All retries failed. Restarting Acrobat...")
-                    restart_acrobat()
-                    files_since_restart = 0
+                    # All retries failed - force-kill Acrobat and try once more
+                    print(f"  All retries failed. Force-killing Acrobat...")
+                    force_kill_acrobat()
                     if convert_pdf_to_word(pdf_path, output_path):
                         print(f"  Success after restart: {output_path.name}")
-                        success_count += 1
-                        files_since_restart += 1
-                    else:
-                        fail_count += 1
+                        conversion_success = True
+
+        # Track success/failure for circuit breaker
+        if conversion_success:
+            success_count += 1
+            consecutive_failures = 0  # Reset circuit breaker
+        else:
+            fail_count += 1
+            failed_files.append(pdf_path.name)
+            consecutive_failures += 1
+
+            # Circuit breaker: abort if too many consecutive failures
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                print(f"\n{'='*60}")
+                print(f"ABORTING: {consecutive_failures} consecutive failures detected.")
+                print("Acrobat may be stuck in a modal state (dialog, debugger, etc.)")
+                print("Close any Acrobat dialogs and re-run to resume from where you left off.")
+                print(f"{'='*60}\n")
+                break
+
+        processed_count += 1
 
         # Delay between files to prevent Acrobat from freezing
         if i < len(pdf_files):
@@ -155,6 +174,13 @@ def run(input_dir: Path) -> dict:
     # Summary
     print("\n" + "-" * 40)
     print(f"Stage 1 Complete: {success_count} converted, {skip_count} skipped, {fail_count} failed")
+
+    # Log failed files to manifest
+    if failed_files:
+        failed_log = output_dir / "_failed_pdfs.txt"
+        with open(failed_log, "w", encoding="utf-8") as f:
+            f.write("\n".join(failed_files))
+        print(f"Failed files logged to: {failed_log}")
 
     return {'converted': success_count, 'skipped': skip_count, 'failed': fail_count}
 
