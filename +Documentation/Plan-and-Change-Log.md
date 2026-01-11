@@ -63,7 +63,7 @@
 
 ## Current Status
 
-**Version:** 1.3
+**Version:** 1.4
 **Status:** Complete and production-ready for large batches
 
 ### Implemented Features
@@ -82,6 +82,7 @@
 - [x] Flexible input folder via `--input` argument
 - [x] Output to `Sidecar Files/` subfolder
 - [x] Green Finder tags on final .md files
+- [x] Medical heading detection (IMRAD, clinical, case reports, back matter, ALL CAPS)
 
 ### Known Limitations
 - Requires macOS (AppleScript dependency)
@@ -91,6 +92,17 @@
 ---
 
 ## Change Log
+
+### v1.4 — 2026-01-11
+**Medical Heading Detection**
+
+- Added built-in medical heading detection using line-by-line processing with priority ordering
+- Detects IMRAD structure (Abstract, Introduction, Methods, Results, Discussion, Conclusions)
+- Detects clinical headings (Diagnosis, Treatment, Management, Prognosis, etc.)
+- Detects case reports (Case Report, Case 1, Case Presentation)
+- Detects back matter with separator (References, Acknowledgments, Disclosures)
+- ALL CAPS fallback heuristic with noise filtering (Copyright, DOI, ISSN excluded)
+- Medical headings run before YAML regex rules, so custom rules still apply
 
 ### v1.3 — 2026-01-10
 **Flexible Input + Sidecar Output + Finder Tags**

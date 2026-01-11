@@ -71,6 +71,82 @@ def apply_rules(content: str, rules: list) -> str:
     return content
 
 
+def mark_medical_headings(content: str) -> str:
+    """
+    Detect and mark medical document headings as Markdown headers.
+    Uses line-by-line processing with priority ordering.
+    """
+    lines = content.split('\n')
+    new_lines = []
+
+    # Compile patterns with re.IGNORECASE
+    # 1. IMRAD structure (standard journal format)
+    p_structure = re.compile(
+        r'^\s*(?:\d+\.|[IVX]+\.)?\s*'
+        r'(Abstract|Introduction|Background|Objectives?|Aims?|'
+        r'Methods?|Materials\s+and\s+Methods|Patients\s+and\s+Methods|'
+        r'Study\s+Design|Results?|Findings?|Discussion|Comments?|'
+        r'Conclusion[s]?)\s*$',
+        re.IGNORECASE
+    )
+
+    # 2. Clinical/Guideline headings
+    p_clinical = re.compile(
+        r'^\s*(?:\d+\.|[IVX]+\.)?\s*'
+        r'(Epidemiology|Etiology|Pathophysiology|Clinical\s+Presentation|'
+        r'Diagnosis|Evaluation|Investigations|Management|Treatment|'
+        r'Therapy|Prognosis|Prevention|Recommendations?|Key\s+Points?)\s*$',
+        re.IGNORECASE
+    )
+
+    # 3. Case reports
+    p_case = re.compile(
+        r'^\s*(Case\s+Report[s]?|Case\s+Presentation|Case\s+\d+(?:-\d+)?)\s*$',
+        re.IGNORECASE
+    )
+
+    # 4. Back matter (references, acknowledgments, etc.)
+    p_meta = re.compile(
+        r'^\s*(References|Bibliography|Literature\s+Cited|'
+        r'Acknowledgments?|Disclosures?|Conflicts?\s+of\s+Interest|'
+        r'Funding|Financial\s+Support|Author\s+Contributions)\s*$',
+        re.IGNORECASE
+    )
+
+    # 5. ALL CAPS heuristic (with noise filtering)
+    p_caps = re.compile(
+        r'^(?!.*\b(Copyright|DOI|ISSN|Vol\.|Page)\b)[A-Z][A-Z0-9\s\-\(\):]{3,80}$'
+    )
+
+    for line in lines:
+        clean = line.strip()
+        if not clean:
+            new_lines.append(line)
+            continue
+
+        # Skip lines that are already headers
+        if clean.startswith('#'):
+            new_lines.append(line)
+            continue
+
+        # Priority 1: Named sections → ## heading
+        if p_structure.match(clean) or p_clinical.match(clean) or p_case.match(clean):
+            new_lines.append(f"\n## {clean}\n")
+
+        # Priority 2: Back matter → --- separator + ### heading
+        elif p_meta.match(clean):
+            new_lines.append(f"\n---\n### {clean}\n")
+
+        # Priority 3: ALL CAPS fallback (only if not all digits)
+        elif p_caps.match(clean) and not clean.replace('.', '').replace(' ', '').isdigit():
+            new_lines.append(f"\n## {clean}\n")
+
+        else:
+            new_lines.append(line)
+
+    return '\n'.join(new_lines)
+
+
 def set_finder_tag_green(file_path: Path):
     """Set a green Finder tag on a file using xattr."""
     try:
@@ -87,13 +163,17 @@ def set_finder_tag_green(file_path: Path):
 
 def clean_markdown(input_path: Path, output_path: Path, rules: list) -> bool:
     """
-    Apply regex rules to a Markdown file.
+    Apply medical heading detection and regex rules to a Markdown file.
     Returns True on success, False on failure.
     """
     try:
         with open(input_path, "r", encoding="utf-8") as f:
             content = f.read()
 
+        # Apply medical heading detection first
+        content = mark_medical_headings(content)
+
+        # Then apply YAML regex rules (dates, etc.)
         cleaned_content = apply_rules(content, rules)
 
         with open(output_path, "w", encoding="utf-8") as f:
